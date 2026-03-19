@@ -1,0 +1,7 @@
+credentials.json
+token.pickle
+venv/
+matrix_bot_chat_venv/
+synapse/data/
+__pycache__/
+*.pyc
