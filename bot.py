@@ -113,6 +113,28 @@ def delete_calendar_event(title, date):
     service.events().delete(calendarId='primary', eventId=event['id']).execute()
     return f"Jag har tagit bort '{event['summary']}' den {date}."
 
+def delete_event_by_time(date, hour):
+    """Ta bort en händelse baserat på datum och tid."""
+    service = get_calendar_service()
+    start_time = f"{date}T{hour:02d}:00:00+01:00"
+    end_time   = f"{date}T{hour+1:02d}:00:00+01:00"
+    events_result = service.events().list(
+        calendarId='primary',
+        timeMin=start_time,
+        timeMax=end_time,
+        singleEvents=True,
+        orderBy='startTime'
+    ).execute()
+    events = events_result.get('items', [])
+    if not events:
+        return f" Hittade ingen händelse den {date} kl {hour:02d}:00."
+    if len(events) > 1:
+        names = ', '.join([e['summary'] for e in events])
+        return f"Hittade flera händelser: {names}. Var mer specifik."
+    event = events[0]
+    service.events().delete(calendarId='primary', eventId=event['id']).execute()
+    return f"Jag har tagit Bort: '{event['summary']}' den {date} kl {hour:02d}:00."
+
 async def ask_ollama_for_json(conversation):
     """Be Ollama tolka bokning och returnera JSON med exakt titel."""
     messages = [
@@ -120,16 +142,23 @@ async def ask_ollama_for_json(conversation):
             "role": "system",
             "content": (
                 "Du är en kalenderassistent. Analysera vad användaren vill göra och svara ENDAST med JSON.\n\n"
+
                 "För att BOKA:\n"
                 '{"action": "book", "title": "EXAKT_TITEL", "date": "YYYY-MM-DD", "start": HH, "end": HH}\n\n'
+
                 "För att TA BORT:\n"
                 '{"action": "delete", "title": "EXAKT_TITEL", "date": "YYYY-MM-DD"}\n\n'
+
+                "För att TA BORT med tid:\n"
+                '{"action": "delete_by_time", "date": "YYYY-MM-DD", "hour": HH}\n\n'
+
                 "Om varken bokning eller borttagning:\n"
                 '{"action": "none"}\n\n'
+
                 "VIKTIGT: Använd EXAKT titeln användaren angav. Svara BARA med JSON.\n"
-                f"Aktuellt år är 2026. Använd alltid 2026 om inget annat år anges.\n"
-                "Om användaren refererar till 'den aktiviteten' eller 'det mötet', "
-                "leta i konversationshistoriken efter senast nämnda händelse och använd den titeln och datumet."
+                    f"Aktuellt år är 2026. Använd alltid 2026 om inget annat år anges.\n"
+                    "Om användaren refererar till 'den aktiviteten' eller 'det mötet', "
+                    "leta i konversationshistoriken efter senast nämnda händelse och använd den titeln och datumet."
             )
         }
     ] + conversation[-6:]
@@ -193,6 +222,11 @@ async def ask_ollama(room_id, message):
                 reply = delete_calendar_event(
                     title=booking["title"],
                     date=booking["date"]
+                )
+            elif booking.get("action") == "delete_by_time":
+                reply = delete_event_by_time(
+                    date=booking["date"],
+                    hour=int(booking["hour"])
                 )
         except Exception as e:
             print(f"Åtgärdsfel: {e}")
