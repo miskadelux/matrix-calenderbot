@@ -68,8 +68,10 @@ async def ask_ollama(room_id, message):
                 "Svara på svenska om användaren skriver svenska, annars engelska. "
                 "Håll svaren kortfattade. "
                 "VIKTIGT: Säg ALDRIG att du gjort något om du inte faktiskt gjort det. "
-                f"\nAktuell tid: {datetime.now().strftime('%Y-%m-%d %H:%M')}"
-                f"\nKalender:\n{calendar_context}"
+                    f"\nAktuell tid: {get_current_datetime_string()}"
+                    f"\nKalender:\n{calendar_context}"
+                "VIKTIGT: Använd ALLTID veckodagen som anges i kalendern och aktuell tid. "
+                    "Räkna ALDRIG ut veckodagar själv — de är redan uträknade och korrekta. "
             )
         }
     ] + conversation_history[room_id][-10:]

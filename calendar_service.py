@@ -27,10 +27,20 @@ def get_upcoming_events(days=7):
     events = events_result.get('items', [])
     if not events:
         return "Inga kommande händelser."
+    
+    weekdays = {
+        0: "Monday", 1: "Tuesday", 2: "Wednesday",
+        3: "Thursday", 4: "Friday", 5: "Saturday", 6: "Sunday"
+    }
+    
     result = ""
     for event in events:
         start = event['start'].get('dateTime', event['start'].get('date'))
-        result += f"- {event['summary']}: {start}\n"
+        # Räkna ut veckodagen från datumet
+        date_str = start[:10]
+        date_obj = datetime.strptime(date_str, '%Y-%m-%d')
+        weekday = weekdays[date_obj.weekday()]
+        result += f"- {event['summary']}: {weekday} {start}\n"
     return result
 
 def check_conflicts(date, start_hour, end_hour):
