@@ -85,19 +85,48 @@ def create_calendar_event(summary, date, start_hour, end_hour):
     else:
         return f"Något gick fel, händelsen skapades inte."
 
+def delete_calendar_event(title, date):
+    """Ta bort en händelse baserat på titel och datum."""
+    service = get_calendar_service()
+    # Sök händelser den dagen
+    start_of_day = f"{date}T00:00:00Z"
+    end_of_day   = f"{date}T23:59:59Z"
+    events_result = service.events().list(
+        calendarId='primary',
+        timeMin=start_of_day,
+        timeMax=end_of_day,
+        singleEvents=True,
+        orderBy='startTime'
+    ).execute()
+    events = events_result.get('items', [])
+
+    # Hitta händelse med matchande titel (okänslig för versaler)
+    matches = [e for e in events if title.lower() in e['summary'].lower()]
+
+    if not matches:
+        return f" Hittade ingen händelse med titeln '{title}' den {date}."
+    if len(matches) > 1:
+        names = ', '.join([e['summary'] for e in matches])
+        return f"Hittade flera händelser: {names}. Var mer specifik."
+
+    event = matches[0]
+    service.events().delete(calendarId='primary', eventId=event['id']).execute()
+    return f"Jag har tagit bort '{event['summary']}' den {date}."
+
 async def ask_ollama_for_json(conversation):
     """Be Ollama tolka bokning och returnera JSON med exakt titel."""
     messages = [
         {
             "role": "system",
             "content": (
-                "Du är en kalenderassistent. När användaren vill boka något, "
-                "extrahera informationen och svara ENDAST med JSON i detta format:\n"
-                '{"action": "book", "title": "EXAKT_TITEL_FRÅN_ANVÄNDAREN", "date": "YYYY-MM-DD", "start": HH, "end": HH}\n'
-                "VIKTIGT: Använd EXAKT den titel användaren angav, ändra ingenting.\n"
-                "Om användaren INTE vill boka något, svara med:\n"
-                '{"action": "none"}\n'
-                "Svara BARA med JSON, inget annat. Inga förklaringar."
+                "Du är en kalenderassistent. Analysera vad användaren vill göra och svara ENDAST med JSON.\n\n"
+                "För att BOKA:\n"
+                '{"action": "book", "title": "EXAKT_TITEL", "date": "YYYY-MM-DD", "start": HH, "end": HH}\n\n'
+                "För att TA BORT:\n"
+                '{"action": "delete", "title": "EXAKT_TITEL", "date": "YYYY-MM-DD"}\n\n'
+                "Om varken bokning eller borttagning:\n"
+                '{"action": "none"}\n\n'
+                "VIKTIGT: Använd EXAKT titeln användaren angav. Svara BARA med JSON."
             )
         }
     ] + conversation[-6:]
@@ -142,22 +171,28 @@ async def ask_ollama(room_id, message):
             data = await response.json()
             reply = data["message"]["content"]
 
-    booking_words = ["boka", "lägg till", "skapa", "schemalägger", "lägg in", "add", "create"]
-    if any(word in message.lower() for word in booking_words):
+    action_words = ["boka", "lägg till", "skapa", "lägg in", "add", "create",
+                "ta bort", "radera", "delete", "remove", "avboka"]
+    if any(word in message.lower() for word in action_words):
         try:
             json_reply = await ask_ollama_for_json(conversation_history[room_id])
             json_reply = json_reply.strip().strip('`').replace('json\n', '').replace('json', '')
             booking = json.loads(json_reply)
+
             if booking.get("action") == "book":
-                result = create_calendar_event(
+                reply = create_calendar_event(
                     summary=booking["title"],
                     date=booking["date"],
                     start_hour=int(booking["start"]),
                     end_hour=int(booking["end"])
                 )
-                reply = result
+            elif booking.get("action") == "delete":
+                reply = delete_calendar_event(
+                    title=booking["title"],
+                    date=booking["date"]
+                )
         except Exception as e:
-            print(f"Bokningsfel: {e}")
+            print(f"Åtgärdsfel: {e}")
 
     conversation_history[room_id].append({"role": "assistant", "content": reply})
     return reply
