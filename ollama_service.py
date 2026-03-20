@@ -1,6 +1,6 @@
 import aiohttp
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from config import OLLAMA_URL, OLLAMA_MODEL
 from calendar_service import (
     get_upcoming_events,
@@ -8,6 +8,24 @@ from calendar_service import (
     delete_calendar_event,
     delete_event_by_time
 )
+
+conversation_history = {}
+
+def get_date_context():
+    """Generera en veckoöversikt så Mistral aldrig behöver gissa."""
+    weekdays = {
+        0: "Monday", 1: "Tuesday", 2: "Wednesday",
+        3: "Thursday", 4: "Friday", 5: "Saturday", 6: "Sunday"
+    }
+    today = datetime.now()
+    context = "Datumreferenser (använd DESSA, räkna aldrig själv):\n"
+    labels = ["idag/today", "imorgon/tomorrow", "i övermorgon", 
+              "om 3 dagar", "om 4 dagar", "om 5 dagar", "om 6 dagar"]
+    for i, label in enumerate(labels):
+        day = today + timedelta(days=i)
+        weekday = weekdays[day.weekday()]
+        context += f"- {label} = {weekday} {day.strftime('%Y-%m-%d')}\n"
+    return context
 
 def get_current_datetime_string():
     now = datetime.now()
@@ -18,7 +36,7 @@ def get_current_datetime_string():
     weekday = weekdays[now.weekday()]
     return f"{weekday} {now.strftime('%Y-%m-%d')} kl {now.strftime('%H:%M')}"
 
-conversation_history = {}
+
 
 async def ask_ollama_for_json(conversation):
     messages = [
@@ -65,13 +83,13 @@ async def ask_ollama(room_id, message):
             "content": (
                 "Du är en personlig kalenderassistent. "
                 "Du kan läsa, boka och ta bort händelser i användarens Google Calendar. "
-                "Svara på svenska om användaren skriver svenska, annars engelska. "
+                "Svara alltid på samma språk som användaren skriver. "
                 "Håll svaren kortfattade. "
                 "VIKTIGT: Säg ALDRIG att du gjort något om du inte faktiskt gjort det. "
-                    f"\nAktuell tid: {get_current_datetime_string()}"
-                    f"\nKalender:\n{calendar_context}"
-                "VIKTIGT: Använd ALLTID veckodagen som anges i kalendern och aktuell tid. "
-                    "Räkna ALDRIG ut veckodagar själv — de är redan uträknade och korrekta. "
+                "VIKTIGT: Använd ALLTID datumreferenserna nedan — räkna ALDRIG ut datum eller veckodagar själv.\n"
+                f"\nAktuell tid: {get_current_datetime_string()}"
+                f"\n{get_date_context()}"
+                f"\nKalender:\n{calendar_context}"
             )
         }
     ] + conversation_history[room_id][-10:]
