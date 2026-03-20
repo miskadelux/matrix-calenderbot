@@ -126,7 +126,10 @@ async def ask_ollama_for_json(conversation):
                 '{"action": "delete", "title": "EXAKT_TITEL", "date": "YYYY-MM-DD"}\n\n'
                 "Om varken bokning eller borttagning:\n"
                 '{"action": "none"}\n\n'
-                "VIKTIGT: Använd EXAKT titeln användaren angav. Svara BARA med JSON."
+                "VIKTIGT: Använd EXAKT titeln användaren angav. Svara BARA med JSON.\n"
+                f"Aktuellt år är 2026. Använd alltid 2026 om inget annat år anges.\n"
+                "Om användaren refererar till 'den aktiviteten' eller 'det mötet', "
+                "leta i konversationshistoriken efter senast nämnda händelse och använd den titeln och datumet."
             )
         }
     ] + conversation[-6:]
