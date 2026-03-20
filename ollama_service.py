@@ -9,6 +9,15 @@ from calendar_service import (
     delete_event_by_time
 )
 
+def get_current_datetime_string():
+    now = datetime.now()
+    weekdays = {
+        0: "Monday", 1: "Tuesday", 2: "Wednesday",
+        3: "Thursday", 4: "Friday", 5: "Saturday", 6: "Sunday"
+    }
+    weekday = weekdays[now.weekday()]
+    return f"{weekday} {now.strftime('%Y-%m-%d')} kl {now.strftime('%H:%M')}"
+
 conversation_history = {}
 
 async def ask_ollama_for_json(conversation):
