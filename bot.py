@@ -2,7 +2,7 @@ import asyncio
 import aiohttp
 import pickle
 import os
-import re
+import json
 from datetime import datetime, timedelta
 from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
@@ -45,35 +45,62 @@ def get_upcoming_events(days=7):
         result += f"- {event['summary']}: {start}\n"
     return result
 
+def check_conflicts(date, start_hour, end_hour):
+    """Kolla om det redan finns en händelse på den tiden."""
+    service = get_calendar_service()
+    start_time = f"{date}T{start_hour:02d}:00:00+01:00"
+    end_time   = f"{date}T{end_hour:02d}:00:00+01:00"
+    events_result = service.events().list(
+        calendarId='primary',
+        timeMin=start_time,
+        timeMax=end_time,
+        singleEvents=True,
+        orderBy='startTime'
+    ).execute()
+    events = events_result.get('items', [])
+    if events:
+        conflict_names = [e['summary'] for e in events]
+        return conflict_names
+    return []
+
 def create_calendar_event(summary, date, start_hour, end_hour):
-    """Skapa händelse i Google Calendar."""
+    """Skapa händelse i Google Calendar med exakt titel."""
+    # Kolla konflikter först
+    conflicts = check_conflicts(date, start_hour, end_hour)
+    if conflicts:
+        return f"Du är redan bokad den {date} kl {start_hour:02d}:00-{end_hour:02d}:00 med: {', '.join(conflicts)}. Vill du boka ändå?"
+
     service = get_calendar_service()
     start_time = f"{date}T{start_hour:02d}:00:00"
     end_time   = f"{date}T{end_hour:02d}:00:00"
     event = {
-        'summary': summary,
+        'summary': summary,  # Exakt titel från användaren
         'start': {'dateTime': start_time, 'timeZone': 'Europe/Stockholm'},
         'end':   {'dateTime': end_time,   'timeZone': 'Europe/Stockholm'},
     }
     result = service.events().insert(calendarId='primary', body=event).execute()
-    return f"✅ Lagt till: '{summary}' den {date} kl {start_hour:02d}:00–{end_hour:02d}:00"
+    # Verifiera att det faktiskt skapades
+    if result.get('id'):
+        return f"Lagt till: '{summary}' den {date} kl {start_hour:02d}:00-{end_hour:02d}:00"
+    else:
+        return f"Något gick fel, händelsen skapades inte."
 
-async def ask_ollama_for_json(conversation: list) -> str:
-    """Be Ollama tolka bokning och returnera JSON."""
+async def ask_ollama_for_json(conversation):
+    """Be Ollama tolka bokning och returnera JSON med exakt titel."""
     messages = [
         {
             "role": "system",
             "content": (
                 "Du är en kalenderassistent. När användaren vill boka något, "
                 "extrahera informationen och svara ENDAST med JSON i detta format:\n"
-                '{"action": "book", "title": "...", "date": "YYYY-MM-DD", "start": HH, "end": HH}\n'
+                '{"action": "book", "title": "EXAKT_TITEL_FRÅN_ANVÄNDAREN", "date": "YYYY-MM-DD", "start": HH, "end": HH}\n'
+                "VIKTIGT: Använd EXAKT den titel användaren angav, ändra ingenting.\n"
                 "Om användaren INTE vill boka något, svara med:\n"
                 '{"action": "none"}\n'
-                "Svara BARA med JSON, inget annat."
+                "Svara BARA med JSON, inget annat. Inga förklaringar."
             )
         }
     ] + conversation[-6:]
-
     payload = {"model": OLLAMA_MODEL, "messages": messages, "stream": False}
     timeout = aiohttp.ClientTimeout(total=300)
     async with aiohttp.ClientSession(timeout=timeout) as session:
@@ -81,7 +108,7 @@ async def ask_ollama_for_json(conversation: list) -> str:
             data = await response.json()
             return data["message"]["content"]
 
-async def ask_ollama(room_id: str, message: str) -> str:
+async def ask_ollama(room_id, message):
     try:
         calendar_context = get_upcoming_events(days=7)
     except Exception as e:
@@ -98,8 +125,10 @@ async def ask_ollama(room_id: str, message: str) -> str:
             "content": (
                 "Du är en personlig kalenderassistent. "
                 "Du kan läsa och boka händelser i användarens Google Calendar. "
-                "Svara på svenska. Håll svaren kortfattade. "
-                "När du bokar något, bekräfta tydligt vad du bokade. "
+                "Svara på svenska om användaren skriver svenska, annars engelska. "
+                "Håll svaren kortfattade. "
+                "VIKTIGT: Säg ALDRIG att du gjort något om du inte faktiskt gjort det. "
+                "Om du är osäker, säg det istället. "
                 f"\nAktuell tid: {datetime.now().strftime('%Y-%m-%d %H:%M')}"
                 f"\nKalender:\n{calendar_context}"
             )
@@ -113,14 +142,11 @@ async def ask_ollama(room_id: str, message: str) -> str:
             data = await response.json()
             reply = data["message"]["content"]
 
-    # Kolla om vi ska boka något
-    booking_words = ["boka", "lägg till", "skapa", "schemalägger", "lägg in", "skapa denna"]
+    booking_words = ["boka", "lägg till", "skapa", "schemalägger", "lägg in", "add", "create"]
     if any(word in message.lower() for word in booking_words):
         try:
-            import json
             json_reply = await ask_ollama_for_json(conversation_history[room_id])
-            # Rensa bort eventuella markdown-tecken
-            json_reply = json_reply.strip().strip('`').replace('json\n', '')
+            json_reply = json_reply.strip().strip('`').replace('json\n', '').replace('json', '')
             booking = json.loads(json_reply)
             if booking.get("action") == "book":
                 result = create_calendar_event(
@@ -136,13 +162,13 @@ async def ask_ollama(room_id: str, message: str) -> str:
     conversation_history[room_id].append({"role": "assistant", "content": reply})
     return reply
 
-async def message_callback(room: MatrixRoom, event: RoomMessageText) -> None:
+async def message_callback(room, event):
     if event.sender == BOT_USER:
         return
-    print(f"📨 [{room.display_name}] {event.sender}: {event.body}")
-    print("🤔 Tänker...")
+    print(f"[{room.display_name}] {event.sender}: {event.body}")
+    print("jag Tänker... du får mitt svar snat")
     reply = await ask_ollama(room.room_id, event.body)
-    print(f"💬 Svar: {reply}")
+    print(f"här får du mitt svar: {reply}")
     await client.room_send(
         room_id=room.room_id,
         message_type="m.room.message",
@@ -152,16 +178,16 @@ async def message_callback(room: MatrixRoom, event: RoomMessageText) -> None:
 async def main():
     global client
     client = AsyncClient(MATRIX_SERVER, BOT_USER)
-    print("🔑 Loggar in...")
+    print("Loggar in...")
     await client.login(BOT_PASSWORD)
-    print(f"✅ Inloggad som {BOT_USER}")
+    print(f"Inloggad som {BOT_USER}")
     response = await client.sync(timeout=3000)
     if isinstance(response, SyncResponse):
         client.next_batch = response.next_batch
-        print("⏩ Skippar gamla meddelanden, startar från nu")
+        print(" Skippar gamla meddelanden, startar från nu")
     for room_id in list(client.invited_rooms.keys()):
         await client.join(room_id)
-        print(f"✅ Gick med i rum: {room_id}")
+        print(f"Gick med i rum: {room_id}")
     client.add_event_callback(message_callback, RoomMessageText)
     print("👂 Lyssnar på meddelanden... (Ctrl+C för att avsluta)")
     await client.sync_forever(timeout=30000, full_state=True)

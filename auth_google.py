@@ -10,4 +10,4 @@ creds = flow.run_local_server(port=0)
 with open('token.pickle', 'wb') as token:
     pickle.dump(creds, token)
 
-print("✅ Autentisering klar! token.pickle sparad.")
+print("Autentisering klar! token.pickle sparad.")
