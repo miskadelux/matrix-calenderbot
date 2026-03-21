@@ -68,7 +68,7 @@ async def ask_ollama_for_json(conversation):
 
 async def ask_ollama(room_id, message):
     try:
-        calendar_context = get_upcoming_events(days=7)
+        calendar_context = get_upcoming_events(days=30)
     except Exception as e:
         calendar_context = f"Kunde inte hämta kalender: {e}"
 
