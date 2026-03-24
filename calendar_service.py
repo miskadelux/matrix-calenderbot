@@ -119,3 +119,47 @@ def delete_event_by_time(date, hour):
     event = events[0]
     service.events().delete(calendarId='primary', eventId=event['id']).execute()
     return f"Jag har tagit bort: '{event['summary']}' den {date} kl {hour:02d}:00."
+
+
+
+
+def create_multiple_events(summary, start_date, end_date, start_hour, end_hour, weekdays_only=True):
+    """Skapa händelser för flera dagar i rad."""
+    service = get_calendar_service()
+    
+    start = datetime.strptime(start_date, '%Y-%m-%d')
+    end = datetime.strptime(end_date, '%Y-%m-%d')
+    
+    created = 0
+    skipped = 0
+    current = start
+    
+    while current <= end:
+        # 0=Måndag, 4=Fredag, 5=Lördag, 6=Söndag
+        if weekdays_only and current.weekday() >= 5:
+            current += timedelta(days=1)
+            continue
+        
+        # Kolla konflikter
+        date_str = current.strftime('%Y-%m-%d')
+        conflicts = check_conflicts(date_str, start_hour, end_hour)
+        
+        if conflicts:
+            skipped += 1
+        else:
+            event = {
+                'summary': summary,
+                'start': {'dateTime': f"{date_str}T{start_hour:02d}:00:00", 'timeZone': 'Europe/Stockholm'},
+                'end':   {'dateTime': f"{date_str}T{end_hour:02d}:00:00", 'timeZone': 'Europe/Stockholm'},
+            }
+            service.events().insert(calendarId='primary', body=event).execute()
+            created += 1
+        
+        current += timedelta(days=1)
+    
+    result = f"✅ Skapade {created} händelser '{summary}' kl {start_hour:02d}:00-{end_hour:02d}:00"
+    if weekdays_only:
+        result += " (vardagar)"
+    if skipped > 0:
+        result += f"\n⚠️ Hoppade över {skipped} dagar med konflikter"
+    return result

@@ -6,7 +6,9 @@ from calendar_service import (
     get_upcoming_events,
     create_calendar_event,
     delete_calendar_event,
-    delete_event_by_time
+    delete_event_by_time,
+    create_multiple_events
+
 )
 
 conversation_history = {}
@@ -56,6 +58,8 @@ async def ask_ollama_for_json(conversation):
                 f"Aktuellt år är 2026. Använd alltid 2026 om inget annat år anges.\n"
                 "Om användaren refererar till 'den aktiviteten' eller 'det mötet', "
                 "leta i konversationshistoriken efter senast nämnda händelse och använd den titeln och datumet."
+                "För att BOKA FLERA DAGAR:\n"
+                '{"action": "book_multiple", "title": "EXAKT_TITEL", "start_date": "YYYY-MM-DD", "end_date": "YYYY-MM-DD", "start": HH, "end": HH, "weekdays_only": true}\n\n'
             )
         }
     ] + conversation[-6:]
@@ -125,6 +129,15 @@ async def ask_ollama(room_id, message):
                 reply = delete_event_by_time(
                     date=booking["date"],
                     hour=int(booking["hour"])
+                )
+            elif booking.get("action") == "book_multiple":
+                reply = create_multiple_events(
+                    summary=booking["title"],
+                    start_date=booking["start_date"],
+                    end_date=booking["end_date"],
+                    start_hour=int(booking["start"]),
+                    end_hour=int(booking["end"]),
+                    weekdays_only=booking.get("weekdays_only", True)
                 )
         except Exception as e:
             print(f"Åtgärdsfel: {e}")
