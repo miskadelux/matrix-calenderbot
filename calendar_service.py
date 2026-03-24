@@ -120,9 +120,6 @@ def delete_event_by_time(date, hour):
     service.events().delete(calendarId='primary', eventId=event['id']).execute()
     return f"Jag har tagit bort: '{event['summary']}' den {date} kl {hour:02d}:00."
 
-
-
-
 def create_multiple_events(summary, start_date, end_date, start_hour, end_hour, weekdays_only=True):
     """Skapa händelser för flera dagar i rad."""
     service = get_calendar_service()
@@ -157,9 +154,40 @@ def create_multiple_events(summary, start_date, end_date, start_hour, end_hour, 
         
         current += timedelta(days=1)
     
-    result = f"✅ Skapade {created} händelser '{summary}' kl {start_hour:02d}:00-{end_hour:02d}:00"
+    result = f"Skapade {created} händelser '{summary}' kl {start_hour:02d}:00-{end_hour:02d}:00"
     if weekdays_only:
         result += " (vardagar)"
     if skipped > 0:
-        result += f"\n⚠️ Hoppade över {skipped} dagar med konflikter"
+        result += f"\n Hoppade över {skipped} dagar med konflikter"
     return result
+
+def delete_multiple_events(summary, start_date, end_date, start_hour=None, end_hour=None, weekdays_only=True):
+    """Ta bort flera händelser baserat på titel och datumspan."""
+    service = get_calendar_service()
+    
+    start = datetime.strptime(start_date, '%Y-%m-%d')
+    end = datetime.strptime(end_date, '%Y-%m-%d')
+    
+    # Hämta alla händelser i spannet
+    events_result = service.events().list(
+        calendarId='primary',
+        timeMin=start.isoformat() + 'Z',
+        timeMax=(end + timedelta(days=1)).isoformat() + 'Z',
+        singleEvents=True,
+        orderBy='startTime'
+    ).execute()
+    
+    events = events_result.get('items', [])
+    
+    # Filtrera på titel
+    matches = [e for e in events if summary.lower() in e['summary'].lower()]
+    
+    if not matches:
+        return f"❌ Hittade inga händelser med titeln '{summary}' mellan {start_date} och {end_date}."
+    
+    deleted = 0
+    for event in matches:
+        service.events().delete(calendarId='primary', eventId=event['id']).execute()
+        deleted += 1
+    
+    return f"🗑️ Tog bort {deleted} händelser med titeln '{summary}' mellan {start_date} och {end_date}."

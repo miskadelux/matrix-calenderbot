@@ -7,8 +7,8 @@ from calendar_service import (
     create_calendar_event,
     delete_calendar_event,
     delete_event_by_time,
-    create_multiple_events
-
+    create_multiple_events,
+    delete_multiple_events
 )
 
 conversation_history = {}
@@ -60,6 +60,8 @@ async def ask_ollama_for_json(conversation):
                 "leta i konversationshistoriken efter senast nämnda händelse och använd den titeln och datumet."
                 "För att BOKA FLERA DAGAR:\n"
                 '{"action": "book_multiple", "title": "EXAKT_TITEL", "start_date": "YYYY-MM-DD", "end_date": "YYYY-MM-DD", "start": HH, "end": HH, "weekdays_only": true}\n\n'
+                "För att TA BORT FLERA händelser:\n"
+                '{"action": "delete_multiple", "title": "EXAKT_TITEL", "start_date": "YYYY-MM-DD", "end_date": "YYYY-MM-DD"}\n\n'             
             )
         }
     ] + conversation[-6:]
@@ -138,6 +140,12 @@ async def ask_ollama(room_id, message):
                     start_hour=int(booking["start"]),
                     end_hour=int(booking["end"]),
                     weekdays_only=booking.get("weekdays_only", True)
+                )
+            elif booking.get("action") == "delete_multiple":
+                reply = delete_multiple_events(
+                    summary=booking["title"],
+                    start_date=booking["start_date"],
+                    end_date=booking["end_date"]
                 )
         except Exception as e:
             print(f"Åtgärdsfel: {e}")
