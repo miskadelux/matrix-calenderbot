@@ -197,7 +197,6 @@ def get_weekly_overview():
     """Hämta veckoöversikt med aktiviteter per dag och total tid per typ."""
     service = get_calendar_service()
     
-    # Hitta måndagen denna vecka
     today = datetime.now()
     monday = today - timedelta(days=today.weekday())
     sunday = monday + timedelta(days=6)
@@ -211,7 +210,6 @@ def get_weekly_overview():
     ).execute()
     
     events = events_result.get('items', [])
-    
     if not events:
         return "Inga aktiviteter denna vecka."
     
@@ -219,53 +217,66 @@ def get_weekly_overview():
         0: "Måndag", 1: "Tisdag", 2: "Onsdag",
         3: "Torsdag", 4: "Fredag", 5: "Lördag", 6: "Söndag"
     }
-    
-    # Gruppera per dag
+
+    def normalize_title(title):
+        """Slå ihop liknande titlar — tar bort ändelser som a/ar/ing."""
+        title = title.lower().strip()
+        # Slå ihop vanliga varianter
+        suffixes = ['ba', 'ar', 'ing', 'a']
+        for suffix in suffixes:
+            if title.endswith(suffix):
+                return title[:-len(suffix)]
+        return title
+
     days = {}
     time_per_type = {}
-    
+    title_display = {}  # Spara originalnamn för visning
+
     for event in events:
         start_str = event['start'].get('dateTime', event['start'].get('date'))
         end_str   = event['end'].get('dateTime', event['end'].get('date'))
         title     = event['summary']
-        
-        # Räkna ut dag
+
         date_obj  = datetime.strptime(start_str[:10], '%Y-%m-%d')
         day_name  = weekdays[date_obj.weekday()]
-        time_str  = start_str[11:16] if 'T' in start_str else ''
         
-        # Lägg till i daggrupp
+        # Visa start och sluttid
+        start_time = start_str[11:16] if 'T' in start_str else ''
+        end_time   = end_str[11:16] if 'T' in end_str else ''
+        time_range = f"kl {start_time}-{end_time}" if start_time and end_time else ''
+
         if day_name not in days:
             days[day_name] = []
-        days[day_name].append(f"  • {title} kl {time_str}" if time_str else f"  • {title}")
-        
-        # Räkna total tid per aktivitetstyp
+        days[day_name].append(f"  • {title} {time_range}")
+
+        # Räkna tid med normaliserad titel
         if 'T' in start_str and 'T' in end_str:
             start_dt = datetime.strptime(start_str[:19], '%Y-%m-%dT%H:%M:%S')
             end_dt   = datetime.strptime(end_str[:19], '%Y-%m-%dT%H:%M:%S')
-            duration = (end_dt - start_dt).seconds / 3600  # timmar
-            
-            if title not in time_per_type:
-                time_per_type[title] = 0
-            time_per_type[title] += duration
-    
+            duration = (end_dt - start_dt).seconds / 3600
+
+            norm = normalize_title(title)
+            if norm not in time_per_type:
+                time_per_type[norm] = 0
+                title_display[norm] = title  # Spara första originalnamnet
+            time_per_type[norm] += duration
+
     # Bygg resultat
     result = f"📅 Veckoöversikt ({monday.strftime('%d/%m')} - {sunday.strftime('%d/%m')}):\n\n"
-    
-    # Aktiviteter per dag
+
     day_order = ["Måndag", "Tisdag", "Onsdag", "Torsdag", "Fredag", "Lördag", "Söndag"]
     for day in day_order:
         if day in days:
-            result += f"**{day}:**\n"
+            result += f"{day}:\n"
             result += "\n".join(days[day]) + "\n\n"
-    
-    # Total tid per typ
+
     if time_per_type:
         result += "⏱️ Total tid per aktivitet:\n"
-        for title, hours in sorted(time_per_type.items(), key=lambda x: x[1], reverse=True):
+        for norm, hours in sorted(time_per_type.items(), key=lambda x: x[1], reverse=True):
+            display = title_display[norm]
             if hours >= 1:
-                result += f"  • {title}: {hours:.0f}h\n"
+                result += f"  • {display}: {hours:.0f}h\n"
             else:
-                result += f"  • {title}: {hours*60:.0f}min\n"
-    
+                result += f"  • {display}: {hours*60:.0f}min\n"
+
     return result
