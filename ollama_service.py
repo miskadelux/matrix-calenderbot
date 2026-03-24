@@ -8,7 +8,9 @@ from calendar_service import (
     delete_calendar_event,
     delete_event_by_time,
     create_multiple_events,
-    delete_multiple_events
+    delete_multiple_events,
+    get_weekly_overview
+
 )
 
 conversation_history = {}
@@ -62,6 +64,8 @@ async def ask_ollama_for_json(conversation):
                 '{"action": "book_multiple", "title": "EXAKT_TITEL", "start_date": "YYYY-MM-DD", "end_date": "YYYY-MM-DD", "start": HH, "end": HH, "weekdays_only": true}\n\n'
                 "För att TA BORT FLERA händelser:\n"
                 '{"action": "delete_multiple", "title": "EXAKT_TITEL", "start_date": "YYYY-MM-DD", "end_date": "YYYY-MM-DD"}\n\n'             
+                "För att visa VECKOÖVERSIKT:\n"
+                '{"action": "weekly_overview"}\n\n'
             )
         }
     ] + conversation[-6:]
@@ -147,6 +151,8 @@ async def ask_ollama(room_id, message):
                     start_date=booking["start_date"],
                     end_date=booking["end_date"]
                 )
+            elif booking.get("action") == "weekly_overview":
+                reply = get_weekly_overview()
         except Exception as e:
             print(f"Åtgärdsfel: {e}")
 

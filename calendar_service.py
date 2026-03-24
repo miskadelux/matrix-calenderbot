@@ -191,3 +191,81 @@ def delete_multiple_events(summary, start_date, end_date, start_hour=None, end_h
         deleted += 1
     
     return f"🗑️ Tog bort {deleted} händelser med titeln '{summary}' mellan {start_date} och {end_date}."
+
+
+def get_weekly_overview():
+    """Hämta veckoöversikt med aktiviteter per dag och total tid per typ."""
+    service = get_calendar_service()
+    
+    # Hitta måndagen denna vecka
+    today = datetime.now()
+    monday = today - timedelta(days=today.weekday())
+    sunday = monday + timedelta(days=6)
+    
+    events_result = service.events().list(
+        calendarId='primary',
+        timeMin=monday.replace(hour=0, minute=0, second=0).isoformat() + '+01:00',
+        timeMax=sunday.replace(hour=23, minute=59, second=59).isoformat() + '+01:00',
+        singleEvents=True,
+        orderBy='startTime'
+    ).execute()
+    
+    events = events_result.get('items', [])
+    
+    if not events:
+        return "Inga aktiviteter denna vecka."
+    
+    weekdays = {
+        0: "Måndag", 1: "Tisdag", 2: "Onsdag",
+        3: "Torsdag", 4: "Fredag", 5: "Lördag", 6: "Söndag"
+    }
+    
+    # Gruppera per dag
+    days = {}
+    time_per_type = {}
+    
+    for event in events:
+        start_str = event['start'].get('dateTime', event['start'].get('date'))
+        end_str   = event['end'].get('dateTime', event['end'].get('date'))
+        title     = event['summary']
+        
+        # Räkna ut dag
+        date_obj  = datetime.strptime(start_str[:10], '%Y-%m-%d')
+        day_name  = weekdays[date_obj.weekday()]
+        time_str  = start_str[11:16] if 'T' in start_str else ''
+        
+        # Lägg till i daggrupp
+        if day_name not in days:
+            days[day_name] = []
+        days[day_name].append(f"  • {title} kl {time_str}" if time_str else f"  • {title}")
+        
+        # Räkna total tid per aktivitetstyp
+        if 'T' in start_str and 'T' in end_str:
+            start_dt = datetime.strptime(start_str[:19], '%Y-%m-%dT%H:%M:%S')
+            end_dt   = datetime.strptime(end_str[:19], '%Y-%m-%dT%H:%M:%S')
+            duration = (end_dt - start_dt).seconds / 3600  # timmar
+            
+            if title not in time_per_type:
+                time_per_type[title] = 0
+            time_per_type[title] += duration
+    
+    # Bygg resultat
+    result = f"📅 Veckoöversikt ({monday.strftime('%d/%m')} - {sunday.strftime('%d/%m')}):\n\n"
+    
+    # Aktiviteter per dag
+    day_order = ["Måndag", "Tisdag", "Onsdag", "Torsdag", "Fredag", "Lördag", "Söndag"]
+    for day in day_order:
+        if day in days:
+            result += f"**{day}:**\n"
+            result += "\n".join(days[day]) + "\n\n"
+    
+    # Total tid per typ
+    if time_per_type:
+        result += "⏱️ Total tid per aktivitet:\n"
+        for title, hours in sorted(time_per_type.items(), key=lambda x: x[1], reverse=True):
+            if hours >= 1:
+                result += f"  • {title}: {hours:.0f}h\n"
+            else:
+                result += f"  • {title}: {hours*60:.0f}min\n"
+    
+    return result
