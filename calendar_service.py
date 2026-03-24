@@ -280,3 +280,65 @@ def get_weekly_overview():
                 result += f"  • {display}: {hours*60:.0f}min\n"
 
     return result
+
+def get_weekly_summary():
+    """Summera vad som redan hänt denna vecka."""
+    service = get_calendar_service()
+    
+    today = datetime.now()
+    monday = today - timedelta(days=today.weekday())
+    
+    # Från måndag till nu (inte framåt)
+    events_result = service.events().list(
+        calendarId='primary',
+        timeMin=monday.replace(hour=0, minute=0, second=0).isoformat() + '+01:00',
+        timeMax=today.isoformat() + '+01:00',
+        singleEvents=True,
+        orderBy='startTime'
+    ).execute()
+    
+    events = events_result.get('items', [])
+    if not events:
+        return "Du har inga avklarade aktiviteter denna vecka ännu."
+    
+    def normalize_title(title):
+        title = title.lower().strip()
+        suffixes = ['ba', 'ar', 'ing', 'a']
+        for suffix in suffixes:
+            if title.endswith(suffix):
+                return title[:-len(suffix)]
+        return title
+    
+    time_per_type = {}
+    title_display = {}
+    total_hours = 0
+    
+    for event in events:
+        start_str = event['start'].get('dateTime', event['start'].get('date'))
+        end_str   = event['end'].get('dateTime', event['end'].get('date'))
+        title     = event['summary']
+        
+        if 'T' in start_str and 'T' in end_str:
+            start_dt = datetime.strptime(start_str[:19], '%Y-%m-%dT%H:%M:%S')
+            end_dt   = datetime.strptime(end_str[:19], '%Y-%m-%dT%H:%M:%S')
+            duration = (end_dt - start_dt).seconds / 3600
+            
+            norm = normalize_title(title)
+            if norm not in time_per_type:
+                time_per_type[norm] = 0
+                title_display[norm] = title
+            time_per_type[norm] += duration
+            total_hours += duration
+    
+    result = f"📊 Veckosummering ({monday.strftime('%d/%m')} - {today.strftime('%d/%m')}):\n\n"
+    result += "⏱️ Tid per aktivitet:\n"
+    
+    for norm, hours in sorted(time_per_type.items(), key=lambda x: x[1], reverse=True):
+        display = title_display[norm]
+        if hours >= 1:
+            result += f"  • {display}: {hours:.0f}h\n"
+        else:
+            result += f"  • {display}: {hours*60:.0f}min\n"
+    
+    result += f"\n📈 Totalt: {total_hours:.0f}h denna vecka"
+    return result
