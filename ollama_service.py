@@ -58,8 +58,10 @@ async def ask_ollama_for_json(conversation):
                 "Om varken bokning eller borttagning:\n"
                 '{"action": "none"}\n\n'
                 "VIKTIGT: Använd EXAKT titeln användaren angav. Svara BARA med JSON.\n"
-                f"Aktuellt år är 2026. Använd alltid 2026 om inget annat år anges.\n"
-                "Om användaren refererar till 'den aktiviteten' eller 'det mötet', "
+                f"Aktuellt datum är {datetime.now().strftime('%Y-%m-%d')} ({datetime.now().strftime('%A')}).\n"
+                f"'idag' = {datetime.now().strftime('%Y-%m-%d')}\n"
+                f"'imorgon' = {(datetime.now() + timedelta(days=1)).strftime('%Y-%m-%d')}\n"
+                f"'igår' = {(datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')}\n"                "Om användaren refererar till 'den aktiviteten' eller 'det mötet', "
                 "leta i konversationshistoriken efter senast nämnda händelse och använd den titeln och datumet."
                 "För att BOKA FLERA DAGAR:\n"
                 '{"action": "book_multiple", "title": "EXAKT_TITEL", "start_date": "YYYY-MM-DD", "end_date": "YYYY-MM-DD", "start": HH, "end": HH, "weekdays_only": true}\n\n'
@@ -115,7 +117,11 @@ async def ask_ollama(room_id, message):
             reply = data["message"]["content"]
 
     action_words = ["boka", "lägg till", "skapa", "lägg in", "add", "create",
-                    "ta bort", "radera", "delete", "remove", "avboka"]
+                    "ta bort", "radera", "delete", "remove", "avboka",
+                    "veckoöversikt", "weekly", "översikt", "summering", 
+                    "summary", "hur mycket", "how much", "how many",
+                    "visa", "show", "display"]
+
     if any(word in message.lower() for word in action_words):
         try:
             json_reply = await ask_ollama_for_json(conversation_history[room_id])
